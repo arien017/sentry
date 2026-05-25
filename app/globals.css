@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Ground & ink */
+  --ground: #f7f8fa;
+  --ground-raised: #ffffff;
+  --ink: #0f1115;
+  --ink-mute: #6b6f76;
+  --ink-faint: #a3a6ab;
+  --hairline: #e2e4e8;
+  --hairline-strong: #c9ccd2;
+
+  /* Signal */
+  --signal: #14365e;
+  --signal-hover: #0e2747;
+  --signal-tint: #e8edf4;
+
+  /* Materiality */
+  --mat-high: #c03a2e;
+  --mat-elevated: #d69517;
+  --mat-routine: #6b6f76;
+  --mat-acknowledged: #1f5a52;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-ground: var(--ground);
+  --color-ground-raised: var(--ground-raised);
+  --color-ink: var(--ink);
+  --color-ink-mute: var(--ink-mute);
+  --color-ink-faint: var(--ink-faint);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-signal: var(--signal);
+  --color-signal-hover: var(--signal-hover);
+  --color-signal-tint: var(--signal-tint);
+  --color-mat-high: var(--mat-high);
+  --color-mat-elevated: var(--mat-elevated);
+  --color-mat-routine: var(--mat-routine);
+  --color-mat-acknowledged: var(--mat-acknowledged);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 24px;
+  letter-spacing: -0.011em;
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-smoothing: antialiased;
 }
