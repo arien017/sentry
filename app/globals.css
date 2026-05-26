@@ -53,3 +53,76 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
   -webkit-font-smoothing: antialiased;
 }
+/* ============================================================
+   Append this block to the END of app/globals.css.
+   It adds the font aliases + type/component classes the
+   marketing site uses (ported from the design tokens).
+   Your existing colour variables and @theme block stay as-is.
+   ============================================================ */
+
+:root {
+  --display-font: var(--font-display), "Space Grotesk", system-ui, sans-serif;
+  --body-font: var(--font-body), "Inter", system-ui, sans-serif;
+  --mono-font: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Type primitives */
+.t-display { font-family: var(--display-font); font-weight: 500; font-size: 40px; line-height: 48px; letter-spacing: -0.05em; color: var(--ink); }
+.t-title { font-family: var(--display-font); font-weight: 500; font-size: 24px; line-height: 32px; letter-spacing: -0.03em; color: var(--ink); }
+.t-heading { font-family: var(--display-font); font-weight: 500; font-size: 18px; line-height: 26px; letter-spacing: -0.02em; color: var(--ink); }
+.t-body { font-size: 15px; line-height: 24px; letter-spacing: -0.011em; }
+.t-body-emph { font-size: 15px; line-height: 24px; letter-spacing: -0.011em; font-weight: 500; }
+.t-caption { font-size: 13px; line-height: 20px; letter-spacing: 0.01em; color: var(--ink-mute); }
+.t-caption-emph { font-size: 12px; line-height: 20px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mute); }
+.t-mono { font-family: var(--mono-font); font-size: 13px; line-height: 20px; letter-spacing: 0; }
+
+/* Links */
+a { color: var(--signal); text-decoration: none; }
+a:hover { color: var(--signal-hover); }
+
+/* Buttons */
+.btn {
+  appearance: none;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ground-raised);
+  color: var(--ink);
+  font-family: var(--body-font);
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: -0.011em;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+.btn:hover { border-color: var(--ink); }
+.btn-primary { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn-primary:hover { background: var(--signal-hover); border-color: var(--signal-hover); color: #fff; }
+
+/* Materiality dot */
+.mat-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.mat-dot-8 { width: 8px; height: 8px; }
+.mat-dot.high { background: var(--mat-high); }
+.mat-dot.elevated { background: var(--mat-elevated); }
+.mat-dot.routine { background: var(--mat-routine); }
+.mat-dot.acknowledged { background: var(--mat-acknowledged); }
+
+/* Citation block */
+.citation {
+  font-family: var(--mono-font);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink-mute);
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+  margin-top: 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.citation a { color: var(--ink-mute); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--hairline-strong); }
+.citation a:hover { color: var(--signal); }
+
+/* Interpretation block */
+.interp { border-left: 2px solid var(--signal); padding: 4px 0 4px 16px; margin: 16px 0 0; }
+.interp .interp-label { font-size: 12px; line-height: 20px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--signal); display: block; margin-bottom: 4px; }
