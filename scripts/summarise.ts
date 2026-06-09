@@ -1,4 +1,4 @@
-import { classifyPublication } from '../lib/llm/classify'
+import { summarisePublication } from '../lib/llm/summarise'
 
 const PUBLICATION = {
   title: 'APRA finalises new IRB accreditation pathway for banks',
@@ -13,26 +13,9 @@ In a letter to industry published today, APRA confirmed its intention to proceed
 The changes deliver on APRA's commitment to review and streamline the IRB accreditation process in response to Action 2 of the Council of Financial Regulators' Review of Small and Medium-sized Banks.
 
 Footnotes: Banks accredited to use the IRB approach are the four major banks, Macquarie Bank and ING Bank Australia.`,
+  url: 'https://www.apra.gov.au/news-and-publications/apra-finalises-new-irb-accreditation-pathway-for-banks',
+  published_at: 'Thursday 4 June 2026',
 }
-
-const FIRMS = [
-  {
-    name: 'Commonwealth Bank',
-    size: "Very large — one of Australia's four major banks",
-    creditRiskApproach: 'IRB (internal ratings-based) — already accredited',
-    riskCapability: 'Full advanced risk management capability',
-    relevantContext:
-      'Already holds IRB accreditation; this pathway is for banks seeking accreditation, not those already holding it',
-  },
-  {
-    name: 'Bendigo and Adelaide Bank',
-    size: 'Mid-size Australian ADI',
-    creditRiskApproach: 'Standardised approach — not currently IRB-accredited',
-    riskCapability: 'Standard risk management capability',
-    relevantContext:
-      'Growth-focused; a more accessible IRB pathway directly opens a route to reduced capital requirements and more competitive pricing',
-  },
-]
 
 async function main() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -40,16 +23,11 @@ async function main() {
     process.exit(1)
   }
 
-  for (const firm of FIRMS) {
-    console.log(`\n--- ${firm.name} ---`)
-    try {
-      const result = await classifyPublication(PUBLICATION, firm)
-      console.log(`Score:     ${result.materiality_score}/100`)
-      console.log(`Rationale: ${result.rationale}`)
-    } catch (err) {
-      console.error(`Error classifying ${firm.name}:`, err)
-    }
-  }
+  const output = await summarisePublication(PUBLICATION)
+  console.log('\n' + output)
 }
 
-main()
+main().catch((err) => {
+  console.error('Error:', err)
+  process.exit(1)
+})
