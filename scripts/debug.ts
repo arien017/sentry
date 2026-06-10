@@ -31,13 +31,29 @@ async function main() {
   if (joinErr) console.error('ERROR:', joinErr.message)
   else console.log(JSON.stringify(joined, null, 2))
 
-  console.log('\n--- classifications ---')
+  console.log('\n--- classifications (top by score) ---')
   const { data: cls, error: clsErr } = await adminClient
     .from('classifications')
-    .select('id, firm_id, publication_id, materiality_score')
-    .limit(5)
+    .select('id, publication_id, materiality_score, rationale, publications(title)')
+    .order('materiality_score', { ascending: false })
+    .limit(10)
   if (clsErr) console.error('ERROR:', clsErr.message)
-  else console.log(cls?.length ? cls : 'EMPTY')
+  else console.log(JSON.stringify(cls?.length ? cls : 'EMPTY', null, 2))
+
+  console.log('\n--- briefings ---')
+  const { data: briefs, error: briefErr } = await adminClient
+    .from('briefings')
+    .select('id, firm_id, classification_id, channel, delivered_at, summary')
+    .order('created_at', { ascending: false })
+    .limit(5)
+  if (briefErr) console.error('ERROR:', briefErr.message)
+  else if (!briefs?.length) console.log('EMPTY')
+  else
+    for (const b of briefs) {
+      console.log(`id: ${b.id}  channel: ${b.channel}  delivered_at: ${b.delivered_at}`)
+      console.log(b.summary)
+      console.log('---')
+    }
 }
 
 main().catch(console.error)

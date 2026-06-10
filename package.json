@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.102.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
+    "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.8.0",
     "inngest": "^4.5.0",
     "next": "16.2.6",
