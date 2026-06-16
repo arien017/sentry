@@ -200,6 +200,47 @@ function PricingCard({ plan, billing, featured }: { plan: Plan; billing: "monthl
   const price = billing === "annual" ? annualMonthly : plan.priceMonthly;
   const annualSaved = (plan.priceMonthly - annualMonthly) * 12;
 
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [firmName, setFirmName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCheckout = async () => {
+    if (!email.trim() || !firmName.trim()) {
+      setError("Email and firm name are required.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    // NOTE: route requires "yearly", not "annual"
+    const interval = billing === "annual" ? "yearly" : "monthly";
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile: {}, // STUB profile — onboarding chat will supply the real one later
+          email: email.trim(),
+          firmName: firmName.trim(),
+          tier: plan.id, // already lowercase essentials|standard|government
+          interval,
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error || "Checkout failed. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+      const { url } = (await res.json()) as { url: string };
+      window.location.href = url;
+    } catch {
+      setError("Checkout failed. Please try again.");
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -251,9 +292,73 @@ function PricingCard({ plan, billing, featured }: { plan: Plan; billing: "monthl
           : `or A$${annualMonthly} / month billed annually`}
       </div>
 
-      <button className={featured ? "btn btn-primary" : "btn"} style={{ width: "100%", padding: "10px 16px", fontSize: 13, marginBottom: 24 }}>
+      <button onClick={() => setOpen(true)} className={featured ? "btn btn-primary" : "btn"} style={{ width: "100%", padding: "10px 16px", fontSize: 13, marginBottom: 24 }}>
         {plan.cta} →
       </button>
+
+      {open && (
+        <div
+          style={{
+            background: "var(--ground-raised)",
+            border: "1px solid var(--hairline)",
+            padding: 16,
+            marginTop: 12,
+            marginBottom: 24,
+          }}
+        >
+          <h4 className="t-title" style={{ margin: "0 0 6px", fontSize: 18 }}>
+            Start your trial
+          </h4>
+          <p className="t-body" style={{ margin: "0 0 12px", color: "var(--ink-mute)", fontSize: 13 }}>
+            30-day free trial. Card required, cancel anytime before day 30 at no charge.
+          </p>
+          <input
+            type="email"
+            placeholder="Work email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{
+              width: "100%",
+              border: "1px solid var(--hairline)",
+              padding: 8,
+              marginBottom: 8,
+              background: "var(--ground)",
+              color: "var(--ink)",
+              fontFamily: "inherit",
+              fontSize: 13,
+            }}
+          />
+          <input
+            type="text"
+            placeholder="Firm name"
+            value={firmName}
+            onChange={(e) => setFirmName(e.target.value)}
+            style={{
+              width: "100%",
+              border: "1px solid var(--hairline)",
+              padding: 8,
+              marginBottom: 8,
+              background: "var(--ground)",
+              color: "var(--ink)",
+              fontFamily: "inherit",
+              fontSize: 13,
+            }}
+          />
+          {error && (
+            <p className="t-body" style={{ margin: "0 0 8px", color: "var(--signal)", fontSize: 13 }}>
+              {error}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleCheckout} disabled={submitting} className="btn btn-primary" style={{ fontSize: 13 }}>
+              {submitting ? "Starting..." : "Continue to payment"}
+            </button>
+            <button onClick={() => setOpen(false)} className="btn" style={{ fontSize: 13 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {plan.features.map((f, i) => (
