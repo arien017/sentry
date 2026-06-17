@@ -1,4 +1,5 @@
 import type Stripe from 'stripe'
+import { Resend } from 'resend'
 import { stripe } from '@/lib/stripe/client'
 import { adminClient as supabaseAdmin } from '@/lib/supabase/admin'
 import { PRICE_ID_TO_TIER } from '@/lib/stripe/pricing'
@@ -20,7 +21,11 @@ export async function POST(req: Request) {
 
   switch (event.type) {
     case 'checkout.session.completed':
-      return handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session)
+      // origin is derived from the request (never hardcoded) for the welcome-email links.
+      return handleCheckoutCompleted(
+        event.data.object as Stripe.Checkout.Session,
+        new URL(req.url).origin
+      )
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':
       return handleSubscriptionLifecycle(event.type, event.data.object as Stripe.Subscription)
@@ -38,7 +43,10 @@ export async function POST(req: Request) {
 // signup stays 'pending', we return 500, and Stripe's retry re-runs the whole
 // handler cleanly. Do not move the consume earlier.
 // ---------------------------------------------------------------------------
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<Response> {
+async function handleCheckoutCompleted(
+  session: Stripe.Checkout.Session,
+  origin: string
+): Promise<Response> {
   try {
     if (!session.subscription) {
       console.error('checkout.session.completed with no subscription; session:', session.id)
@@ -143,6 +151,43 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
       .eq('id', pendingSignupId)
       .eq('status', 'pending')
     if (consumeError) throw consumeError
+
+    // Welcome email — NON-FATAL. The firm is provisioned and the signup consumed;
+    // a throw here would make Stripe retry a completed provisioning. Placed AFTER
+    // the consume (step 9), so any retry hits the 'already consumed' branch (step 3)
+    // and returns before reaching here — the email is sent at most once.
+    try {
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: signup.email,
+        options: { redirectTo: `${origin}/auth/callback` },
+      })
+      if (linkError) throw linkError
+      // Self-construct the callback link from hashed_token (NOT action_link, which
+      // routes through Supabase's verify endpoint and never delivers token_hash here).
+      const hashedToken = linkData.properties?.hashed_token
+      if (!hashedToken) throw new Error('No hashed_token in generateLink response')
+      const link = `${origin}/auth/callback?token_hash=${hashedToken}&type=magiclink`
+
+      const resend = new Resend(process.env.RESEND_API_KEY!)
+      const { error: sendError } = await resend.emails.send({
+        from: process.env.RESEND_FROM!,
+        to: signup.email,
+        subject: 'Welcome to Sentry — your sign-in link',
+        html: `
+<div style="font-family: inherit; color: #0f1115; line-height: 1.5;">
+  <p>Welcome, ${signup.firm_name}.</p>
+  <p>Sentry monitors Australian regulators and Parliament for items material to your firm.</p>
+  <p><a href="${link}" style="color: #14365e;">Sign in to Sentry</a></p>
+  <p>This link expires shortly. If it has expired, request a new one at ${origin}/login.</p>
+</div>`.trim(),
+      })
+      if (sendError) throw sendError
+      console.log('welcome email sent; session:', session.id, 'email:', signup.email)
+    } catch (emailErr) {
+      // Non-fatal: provisioning already succeeded. Log and swallow — never rethrow.
+      console.error('welcome email failed (non-fatal); session:', session.id, emailErr)
+    }
 
     // 10.
     return new Response('ok', { status: 200 })
