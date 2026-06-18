@@ -43,10 +43,10 @@ persist across sessions. Read them every session before doing any work.
   establish, stop and ask rather than guessing.
 
 ## Models — do not "correct" these
-- The summariser targets `claude-opus-4-8`. It currently runs on `claude-opus-4-7`
-  ONLY because the API key lacks 4.8 access — this is an access constraint, not a
-  nonexistent model. Opus 4.8 exists. Do NOT edit code or docs to assert that 4.7
-  is the latest Opus or that 4.8 doesn't exist. Upgrade to 4.8 if the key gains access.
+- The summariser runs on `claude-opus-4-8`. The API key was verified to have 4.8
+  access (direct curl, 18 June 2026, returned a valid 200), and the summariser was
+  upgraded from 4.7 to 4.8 accordingly. Opus 4.8 exists and is the model in use. Do
+  NOT downgrade to 4.7 or edit code/docs to assert that 4.7 is the latest Opus.
 - Classifier runs on `claude-haiku-4-5-20251001`. Do not change model strings
   without founder instruction.
 
