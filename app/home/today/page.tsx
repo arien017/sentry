@@ -2,66 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/server'
-import type { BriefingRow, SourceType } from '@/components/home/types'
+import type { BriefingRow } from '@/components/home/types'
 import { BriefingView } from '@/components/home/BriefingView'
-
-// Raw shape of the nested PostgREST embed. There are no generated DB types in this
-// repo, so we type the result explicitly and normalize each to-one embed (which can
-// come back as an object or a single-element array) defensively.
-interface RawSource {
-  agency: string
-}
-interface RawPublication {
-  title: string
-  url: string | null
-  published_at: string | null
-  source_type: string
-  sources: RawSource | RawSource[] | null
-}
-interface RawClassification {
-  materiality_score: number
-  rationale: string | null
-  publications: RawPublication | RawPublication[] | null
-}
-interface RawBriefing {
-  id: string
-  summary: string
-  created_at: string
-  delivered_at: string | null
-  classifications: RawClassification | RawClassification[] | null
-}
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (Array.isArray(v)) return v[0] ?? null
-  return v ?? null
-}
-
-function mapRows(raw: RawBriefing[]): BriefingRow[] {
-  const out: BriefingRow[] = []
-  for (const b of raw) {
-    const cls = one(b.classifications)
-    const pub = one(cls?.publications)
-    const src = one(pub?.sources)
-    // !inner + NOT NULL FKs make missing pieces unreachable; guard defensively.
-    if (!cls || !pub || !src) continue
-    const sourceType: SourceType =
-      pub.source_type === 'parliamentary' ? 'parliamentary' : 'regulator'
-    out.push({
-      id: b.id,
-      summary: b.summary,
-      createdAt: b.created_at,
-      deliveredAt: b.delivered_at,
-      materialityScore: cls.materiality_score,
-      rationale: cls.rationale,
-      title: pub.title,
-      url: pub.url,
-      publishedAt: pub.published_at,
-      sourceType,
-      agency: src.agency,
-    })
-  }
-  return out
-}
+import { fetchBriefings } from '@/lib/home/briefings'
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -79,39 +22,13 @@ function Shell({ children }: { children: ReactNode }) {
 export default async function TodayPage() {
   const supabase = await createClient()
 
-  // SSR (anon) client — RLS scopes briefings/classifications to this firm
-  // automatically; publications/sources are authenticated-readable. No adminClient,
-  // no manual firm_id filter.
-  // FK inference: each embed pair has a single FK, so the plain table-name embed
-  // resolves. If PostgREST ever errors on inference, use the explicit constraint
-  // hints: classifications!briefings_classification_id_fkey,
-  // publications!classifications_publication_id_fkey, sources!publications_source_id_fkey.
-  const { data, error } = await supabase
-    .from('briefings')
-    .select(
-      `
-        id,
-        summary,
-        created_at,
-        delivered_at,
-        classifications!inner (
-          materiality_score,
-          rationale,
-          publications!inner (
-            title,
-            url,
-            published_at,
-            source_type,
-            sources!inner (
-              agency
-            )
-          )
-        )
-      `
-    )
-    .order('created_at', { ascending: false })
-
-  if (error) {
+  // RLS scopes briefings/classifications to this firm on the SSR client. The shared
+  // fetchBriefings returns the firm's briefings fully sorted (materiality DESC, then
+  // recency DESC); it throws on a query error, which we render below.
+  let rows: BriefingRow[]
+  try {
+    rows = await fetchBriefings(supabase)
+  } catch (error) {
     console.error('Today: briefings query failed:', error)
     return (
       <Shell>
@@ -123,14 +40,6 @@ export default async function TodayPage() {
       </Shell>
     )
   }
-
-  const rows = mapRows((data ?? []) as unknown as RawBriefing[])
-  // DB .order only sorted by created_at; the primary sort is materiality DESC, then
-  // recency DESC. Done in JS after mapping (only a handful of rows).
-  rows.sort(
-    (a, b) =>
-      b.materialityScore - a.materialityScore || b.createdAt.localeCompare(a.createdAt)
-  )
 
   if (rows.length === 0) {
     return (

@@ -3,68 +3,12 @@ export const dynamic = 'force-dynamic'
 import { Suspense, type ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import type { BriefingRow, SourceType } from '@/components/home/types'
+import type { BriefingRow } from '@/components/home/types'
 import { BriefingView } from '@/components/home/BriefingView'
 import { ArchiveSearch } from '@/components/home/ArchiveSearch'
+import { fetchBriefings } from '@/lib/home/briefings'
 
 const PAGE_SIZE = 20
-
-// Raw shape of the nested PostgREST embed — identical to Today/Alerts. No generated DB
-// types in this repo, so we type the result explicitly and normalize each to-one embed
-// (object or single-element array) defensively.
-interface RawSource {
-  agency: string
-}
-interface RawPublication {
-  title: string
-  url: string | null
-  published_at: string | null
-  source_type: string
-  sources: RawSource | RawSource[] | null
-}
-interface RawClassification {
-  materiality_score: number
-  rationale: string | null
-  publications: RawPublication | RawPublication[] | null
-}
-interface RawBriefing {
-  id: string
-  summary: string
-  created_at: string
-  delivered_at: string | null
-  classifications: RawClassification | RawClassification[] | null
-}
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (Array.isArray(v)) return v[0] ?? null
-  return v ?? null
-}
-
-function mapRows(raw: RawBriefing[]): BriefingRow[] {
-  const out: BriefingRow[] = []
-  for (const b of raw) {
-    const cls = one(b.classifications)
-    const pub = one(cls?.publications)
-    const src = one(pub?.sources)
-    if (!cls || !pub || !src) continue
-    const sourceType: SourceType =
-      pub.source_type === 'parliamentary' ? 'parliamentary' : 'regulator'
-    out.push({
-      id: b.id,
-      summary: b.summary,
-      createdAt: b.created_at,
-      deliveredAt: b.delivered_at,
-      materialityScore: cls.materiality_score,
-      rationale: cls.rationale,
-      title: pub.title,
-      url: pub.url,
-      publishedAt: pub.published_at,
-      sourceType,
-      agency: src.agency,
-    })
-  }
-  return out
-}
 
 function Shell({ search, children }: { search?: ReactNode; children: ReactNode }) {
   return (
@@ -93,39 +37,16 @@ export default async function ArchivePage({
 
   const supabase = await createClient()
 
-  // SAME nested select as Today/Alerts — RLS scopes briefings/classifications to this
-  // firm; publications/sources are authenticated-readable. No adminClient, no manual
-  // firm_id filter.
-  // SCALE NOTE: this fetches the firm's FULL briefing set, then filters/sorts/paginates
-  // in JS. Correct for the current data, but at a large archive this must move to a
-  // DB-side full-text search (tsvector/websearch over summary+title, or an RPC) + DB
-  // .range() pagination, so the server doesn't fetch-all-to-filter.
-  const { data, error } = await supabase
-    .from('briefings')
-    .select(
-      `
-        id,
-        summary,
-        created_at,
-        delivered_at,
-        classifications!inner (
-          materiality_score,
-          rationale,
-          publications!inner (
-            title,
-            url,
-            published_at,
-            source_type,
-            sources!inner (
-              agency
-            )
-          )
-        )
-      `
-    )
-    .order('created_at', { ascending: false })
-
-  if (error) {
+  // Shared fetch returns the firm's full briefing set already sorted (materiality DESC,
+  // recency DESC). Search + pagination run on the result below.
+  // SCALE NOTE: this fetches the firm's FULL briefing set, then filters/paginates in JS.
+  // Correct for the current data, but at a large archive this must move to a DB-side
+  // full-text search (tsvector/websearch over summary+title, or an RPC) + DB .range()
+  // pagination, so the server doesn't fetch-all-to-filter.
+  let all: BriefingRow[]
+  try {
+    all = await fetchBriefings(supabase)
+  } catch (error) {
     console.error('Archive: briefings query failed:', error)
     return (
       <Shell>
@@ -138,9 +59,8 @@ export default async function ArchivePage({
     )
   }
 
-  const all = mapRows((data ?? []) as unknown as RawBriefing[])
-
-  // Search matches BOTH summary and title, case-insensitive (JS, across both fields).
+  // Search matches BOTH summary and title, case-insensitive. The shared fetch already
+  // sorted; the filter preserves order, so no re-sort is needed.
   const ql = q.toLowerCase()
   const filtered = q
     ? all.filter(
@@ -148,12 +68,6 @@ export default async function ArchivePage({
           r.summary.toLowerCase().includes(ql) || r.title.toLowerCase().includes(ql)
       )
     : all
-
-  // Same sort as Today/Alerts: materiality DESC, then recency DESC — before paginating.
-  filtered.sort(
-    (a, b) =>
-      b.materialityScore - a.materialityScore || b.createdAt.localeCompare(a.createdAt)
-  )
 
   const totalMatched = filtered.length
   const totalPages = Math.max(1, Math.ceil(totalMatched / PAGE_SIZE))

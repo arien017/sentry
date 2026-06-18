@@ -6,16 +6,11 @@ import { SourceTag } from './SourceTag'
 import { Interpretation } from './Interpretation'
 import { CitationBlock } from './CitationBlock'
 import { scoreToBand } from '@/lib/home/materiality'
+import { BAND_COLOR } from '@/lib/home/bands'
 
 // A single briefing row: source tag + materiality dot + title + summary +
 // (interpretation when a rationale exists) + citation. Client component because it
 // reports focus upward for the per-view provenance pane.
-const BAND_COLOR = {
-  high: 'var(--mat-high)',
-  elevated: 'var(--mat-elevated)',
-  routine: 'var(--mat-routine)',
-} as const
-
 export function BriefingRow({
   briefing,
   focused = false,
