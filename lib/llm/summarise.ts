@@ -30,7 +30,7 @@ export async function summarisePublication(publication: {
   const content = `Title: ${publication.title}\n\n${publication.text}${publication.url ? `\n\nSource URL: ${publication.url}` : ''}${publication.published_at ? `\nPublication date: ${publication.published_at}` : ''}`
 
   const response = await client.messages.create({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-8',
     max_tokens: 512,
     system: SYSTEM_PROMPT,
     messages: [
