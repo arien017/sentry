@@ -1,11 +1,17 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { parseStreaming, parseFinal, citedIds, type CiteSegment } from './citations'
 
 // Chat island: in-memory multi-turn history (Decision 4a — lost on refresh; DB
 // persistence is a later drop-in), streamed against POST /api/chat. The client sends
-// ONLY { messages }; the firm is derived server-side from the session. Citation tokens
-// [[cite:ID]] render as RAW TEXT at this stage (inline rendering is a later prompt).
+// ONLY { messages }; the firm is derived server-side from the session.
+//
+// Citations: assistant text carries [[cite:BRIEFING_ID]] tokens. They render as
+// superscript footnote markers numbered PER-CONVERSATION and STABLY — each distinct
+// briefing id is numbered on first appearance anywhere in the conversation and keeps that
+// number in every later message. The id→number map (citeNumbers) is conversation-scoped
+// state, persistence-ready. Marker click-to-focus is wired to the provenance pane later.
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -13,24 +19,66 @@ const EMPTY_PROMPT =
   "Ask about your firm's briefings. Sentry answers only from what has been filed, and cites each briefing it draws on."
 const ERROR_TEXT = 'Something went wrong answering that.'
 
-function Turn({
+// Restrained scholarly footnote marker. Carries id + number as data so the provenance
+// pane (a later step) can wire click-to-focus; the click is a no-op for now.
+function CiteMarker({ id, n }: { id: string; n: number }) {
+  return (
+    <sup
+      data-briefing-id={id}
+      data-cite-number={n}
+      role="button"
+      tabIndex={0}
+      aria-label={`Source ${n}`}
+      title={`Source ${n}`}
+      onClick={() => {
+        // Click-to-focus the provenance pane is wired in a later step.
+      }}
+      onKeyDown={(e) => {
+        // Keyboard activation is wired with the click behaviour in a later step.
+        if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
+      }}
+      style={{ color: 'var(--ink-mute)', cursor: 'pointer', fontWeight: 500, padding: '0 1px' }}
+    >
+      {n}
+    </sup>
+  )
+}
+
+function MessageBody({
   role,
   content,
-  pending,
+  citeNumbers,
+  streaming,
 }: {
   role: 'user' | 'assistant'
   content: string
-  pending?: boolean
+  citeNumbers: Record<string, number>
+  streaming: boolean
 }) {
+  const isAssistant = role === 'assistant'
+  // Only assistant text carries citation tokens. User text renders verbatim.
+  const segments: CiteSegment[] = isAssistant
+    ? streaming
+      ? parseStreaming(content)
+      : parseFinal(content)
+    : [{ type: 'text', value: content }]
+
   return (
     <div style={{ marginBottom: 20 }}>
       <div className="t-caption-emph" style={{ color: 'var(--ink-mute)', marginBottom: 4 }}>
-        {role === 'user' ? 'You' : 'Sentry'}
+        {isAssistant ? 'Sentry' : 'You'}
       </div>
-      {/* pre-wrap renders newlines and the literal [[cite:ID]] tokens as raw text */}
+      {/* pre-wrap preserves newlines; text segments render literally, cites as markers */}
       <div className="t-body" style={{ color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
-        {content}
-        {pending && content.length === 0 ? (
+        {segments.map((seg, i) =>
+          seg.type === 'text' ? (
+            <span key={i}>{seg.value}</span>
+          ) : citeNumbers[seg.id] !== undefined ? (
+            // Unknown/not-yet-numbered ids render nothing (drop silently).
+            <CiteMarker key={i} id={seg.id} n={citeNumbers[seg.id]} />
+          ) : null
+        )}
+        {streaming && content.length === 0 ? (
           <span style={{ color: 'var(--ink-faint)' }}>…</span>
         ) : null}
       </div>
@@ -43,6 +91,9 @@ export function ChatView() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
+  // Conversation-scoped, stable citation numbering: briefing id → number, assigned in
+  // order of first appearance across the whole conversation.
+  const [citeNumbers, setCiteNumbers] = useState<Record<string, number>>({})
   const transcriptRef = useRef<HTMLDivElement>(null)
 
   // Keep the latest turn / streaming tokens in view.
@@ -50,6 +101,23 @@ export function ChatView() {
     const el = transcriptRef.current
     if (el) el.scrollTo({ top: el.scrollHeight })
   }, [messages, streamingText])
+
+  // Assign numbers to any not-yet-seen ids, in the given appearance order. Stable: an id
+  // already in the map keeps its number; new ids get the next sequential numbers.
+  const registerCites = (orderedIds: string[]) => {
+    setCiteNumbers((prev) => {
+      let next: Record<string, number> | null = null
+      let n = Object.keys(prev).length
+      for (const id of orderedIds) {
+        if (!(id in prev) && (next === null || !(id in next))) {
+          if (next === null) next = { ...prev }
+          n += 1
+          next[id] = n
+        }
+      }
+      return next ?? prev
+    })
+  }
 
   const send = async () => {
     const text = input.trim()
@@ -74,8 +142,9 @@ export function ChatView() {
         return
       }
 
-      // Consume the response as a STREAM — decode and append chunks as they arrive so
-      // the in-progress assistant turn updates token-by-token (never buffered whole).
+      // Consume the response as a STREAM — decode and append chunks as they arrive so the
+      // in-progress assistant turn updates token-by-token (never buffered whole). Numbers
+      // are registered as complete citations stream in, so markers appear live.
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let acc = ''
@@ -84,8 +153,10 @@ export function ChatView() {
         if (done) break
         acc += decoder.decode(value, { stream: true })
         setStreamingText(acc)
+        registerCites(citedIds(acc))
       }
       acc += decoder.decode()
+      registerCites(citedIds(acc))
 
       setMessages((m) => [...m, { role: 'assistant', content: acc.length > 0 ? acc : ERROR_TEXT }])
     } catch {
@@ -115,10 +186,23 @@ export function ChatView() {
           ) : null}
 
           {messages.map((m, i) => (
-            <Turn key={i} role={m.role} content={m.content} />
+            <MessageBody
+              key={i}
+              role={m.role}
+              content={m.content}
+              citeNumbers={citeNumbers}
+              streaming={false}
+            />
           ))}
 
-          {streaming ? <Turn role="assistant" content={streamingText} pending /> : null}
+          {streaming ? (
+            <MessageBody
+              role="assistant"
+              content={streamingText}
+              citeNumbers={citeNumbers}
+              streaming
+            />
+          ) : null}
         </div>
 
         <div
@@ -166,7 +250,7 @@ export function ChatView() {
         </div>
       </div>
 
-      {/* Right: provenance pane slot — written placeholder for now (prompt 4 makes it live). */}
+      {/* Right: provenance pane slot — written placeholder for now (a later step makes it live). */}
       <aside style={{ padding: 24 }}>
         <div className="t-caption-emph" style={{ color: 'var(--ink-mute)', marginBottom: 12 }}>
           Provenance
