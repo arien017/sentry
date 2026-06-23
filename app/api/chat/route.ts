@@ -23,6 +23,14 @@
  *   normal prose. The model may ONLY emit this token for supplied ids; it must never invent
  *   one.
  *
+ * SOURCE TRAILER (Option 1 — endpoint supplies cited-briefing detail; client fetches none):
+ *   The text stream is plain prose + [[cite:ID]] tokens. After the model completes, the
+ *   endpoint appends a trailer on the SAME stream: the sentinel U+001E (RECORD SEPARATOR,
+ *   "\u001e", which never occurs in model prose) immediately followed by a single-line JSON
+ *   object { "sources": CitedSource[] }. Everything before the first U+001E is transcript
+ *   text; everything after it is the JSON trailer. The trailer lists ONLY the briefings the
+ *   answer actually cited and that were actually supplied — an empty array if none.
+ *
  * Model: claude-opus-4-8 (customer-facing Opus), via the same `new Anthropic()` setup the
  * summariser uses (reads ANTHROPIC_API_KEY from env; no second/parallel client).
  */
@@ -36,6 +44,51 @@ export const dynamic = 'force-dynamic'
 
 const MODEL = 'claude-opus-4-8'
 const MAX_TOKENS = 1024
+
+// Trailer sentinel — U+001E RECORD SEPARATOR; never appears in model prose. The cited-
+// source JSON trailer follows this byte once the text stream completes.
+const SOURCE_TRAILER_SENTINEL = '\u001e'
+
+// Cited-source detail sent in the trailer (only briefings the answer actually cited).
+type CitedSource = {
+  id: string
+  agency: string
+  sourceType: BriefingRow['sourceType']
+  title: string
+  publishedAt: string | null
+  url: string | null
+  materialityScore: number
+}
+
+const CITE_TOKEN_RE = /\[\[cite:([^\]]+)\]\]/g
+
+// The briefings actually cited in the completed answer — deduped in first-appearance
+// order, filtered to ids that were actually supplied (defensive; the system prompt
+// forbids inventing ids). Only cited briefings, never the whole set.
+function citedSources(fullText: string, briefings: BriefingRow[]): CitedSource[] {
+  const byId = new Map(briefings.map((b) => [b.id, b]))
+  const seen = new Set<string>()
+  const out: CitedSource[] = []
+  CITE_TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = CITE_TOKEN_RE.exec(fullText)) !== null) {
+    const id = m[1].trim()
+    if (seen.has(id)) continue
+    const b = byId.get(id)
+    if (!b) continue
+    seen.add(id)
+    out.push({
+      id: b.id,
+      agency: b.agency,
+      sourceType: b.sourceType,
+      title: b.title,
+      publishedAt: b.publishedAt,
+      url: b.url,
+      materialityScore: b.materialityScore,
+    })
+  }
+  return out
+}
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -149,12 +202,22 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder()
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Accumulate the full text server-side to extract cited ids for the trailer. The
+      // text is still streamed delta-by-delta to the client unchanged.
+      let fullText = ''
       try {
         for await (const event of anthropicStream) {
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            fullText += event.delta.text
             controller.enqueue(encoder.encode(event.delta.text))
           }
         }
+        // Trailer at completion: sentinel + JSON of ONLY the cited, supplied briefings
+        // (empty array if none). Everything after the sentinel is the JSON trailer.
+        const sources = citedSources(fullText, briefings)
+        controller.enqueue(
+          encoder.encode(SOURCE_TRAILER_SENTINEL + JSON.stringify({ sources }))
+        )
         controller.close()
       } catch (err) {
         console.error('chat: stream error:', err)
