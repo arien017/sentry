@@ -3,16 +3,16 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-// Five primary views. Today/Alerts/Archive/Chat are live links; Tracker is
-// present-but-disabled (that segment doesn't exist yet) — inert, --ink-faint.
+// Five primary views, all live: Today / Alerts / Archive / Chat / Tracker.
 const LIVE = [
   { label: 'Today', href: '/home/today' },
   { label: 'Alerts', href: '/home/alerts' },
   { label: 'Archive', href: '/home/archive' },
   { label: 'Chat', href: '/home/chat' },
+  { label: 'Tracker', href: '/home/tracker' },
 ] as const
 
-const DISABLED = ['Tracker'] as const
+const DISABLED = [] as const
 
 export function LeftRail() {
   const pathname = usePathname()
